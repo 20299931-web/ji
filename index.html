@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Animal Tycoon - Audio Admin Edition</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; background: #87CEEB; touch-action: none; }
+        #ui { position: absolute; top: 10px; left: 10px; color: white; text-shadow: 2px 2px 4px #000; pointer-events: none; z-index: 10; }
+        #claim-container { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); padding: 15px; border-radius: 15px; border: 2px solid #FFD700; text-align: center; color: white; pointer-events: auto; }
+        
+        /* Barra de Alerta con Animación */
+        #admin-msg-bar { position: absolute; top: 0; width: 100%; background: linear-gradient(90deg, #ff0000, #b30000, #ff0000); color: white; text-align: center; padding: 12px; font-weight: bold; display: none; z-index: 500; border-bottom: 4px solid gold; box-sizing: border-box; font-size: 18px; }
+
+        /* Panel Admin */
+        #admin-panel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #111; border: 3px solid #ff0000; padding: 20px; border-radius: 15px; display: none; z-index: 600; width: 280px; box-shadow: 0 0 30px red; color: white; text-align: center; }
+        
+        /* BOTÓN SECRETO (Invisible en esquina inferior derecha) */
+        #mobile-admin-btn { position: absolute; bottom: 0; right: 0; width: 80px; height: 80px; background: rgba(255,255,255,0); z-index: 1000; cursor: pointer; }
+
+        #shop-menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(10, 10, 10, 0.98); color: white; padding: 25px; border-radius: 20px; display: none; border: 3px solid #FFD700; width: 85%; max-width: 400px; z-index: 100; pointer-events: auto; }
+        
+        .btn { border: none; padding: 12px; cursor: pointer; border-radius: 8px; font-weight: bold; width: 100%; margin-top: 10px; font-size: 16px; }
+        .btn-buy { background: #4CAF50; color: white; width: auto; padding: 10px 15px; }
+        .btn-claim { background: #FFD700; color: #000; }
+        .btn-admin { background: #ff0000; color: white; }
+        .btn-god { background: #FFD700; color: black; border: 2px solid white; }
+
+        /* Joystick */
+        #joystick-wrapper { position: absolute; bottom: 50px; left: 50px; width: 100px; height: 100px; background: rgba(255,255,255,0.2); border-radius: 50%; display: none; touch-action: none; z-index: 50; }
+        #joystick-stick { position: absolute; top: 25px; left: 25px; width: 50px; height: 50px; background: rgba(255,255,255,0.7); border-radius: 50%; }
+
+        #start-prompt { position: absolute; inset: 0; background: #1b5e20; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 2000; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div id="admin-msg-bar"><marquee id="msg-text">ANUNCIO...</marquee></div>
+
+    <div id="admin-panel">
+        <h2 style="color:#ff0000; margin-top:0;">CREADOR PANEL</h2>
+        <input type="text" id="admin-input" placeholder="Mensaje de alerta..." style="width:100%; padding:10px; box-sizing:border-box; margin-bottom:10px; border-radius:5px; border:none;">
+        <button class="btn btn-admin" onclick="sendAdminMsg()">ENVIAR CON SONIDO</button>
+        <button class="btn btn-god" onclick="giveInfiniteMoney()">DINERO MÁXIMO</button>
+        <button class="btn btn-admin" style="background:blue;" onclick="forceRestock(true)">RESTOCK MUNDIAL</button>
+        <button class="btn" style="background:#444; color:white;" onclick="toggleAdmin()">CERRAR</button>
+    </div>
+
+    <div id="mobile-admin-btn" onclick="toggleAdmin()"></div>
+
+    <div id="start-prompt" onclick="initGame()">
+        <h1 style="color: #FFD700; font-size: 35px;">ANIMAL TYCOON</h1>
+        <p>Suelo Verde | Guardado Offline</p>
+        <button class="btn" style="background: #FFD700; width: 220px; color: black;">EMPEZAR</button>
+    </div>
+
+    <div id="ui">
+        <h2 style="margin:0;">$<span id="val-money">5</span></h2>
+        <div style="color: #00ffff; font-weight: bold;">💎 <span id="val-gems">0</span></div>
+    </div>
+
+    <div id="claim-container">
+        <div style="font-size: 14px; font-weight: bold;">BANCO</div>
+        <div style="font-size: 24px; font-weight: bold; color: #00ff00;">$<span id="val-pending">0</span></div>
+        <button class="btn btn-claim" onclick="claimMoney()">RECLAMAR</button>
+    </div>
+
+    <div id="shop-menu">
+        <h2 style="text-align:center; color:#FFD700; margin:0;">TIENDA</h2>
+        <div id="restock-timer" style="font-size: 14px; color: #00ffcc; text-align: center; margin-bottom: 10px;">Restock: 03:00</div>
+        <div id="shop-items-list"></div>
+        <button class="btn" style="background: #9c27b0; color: white;" onclick="forceRestock(false)">RESTOCK (100 💎)</button>
+        <button class="btn" style="background: #444; color:white;" onclick="closeShop()">SALIR</button>
+    </div>
+
+    <div id="joystick-wrapper"><div id="joystick-stick"></div></div>
+
+    <script type="importmap"> { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } } </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // --- AUDIO SYSTEM (Beep Sintetizado) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playAlertSound() {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(440, audioCtx.currentTime); // Nota La
+            osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.5);
+        }
+
+        // --- DATA ---
+        let stats = JSON.parse(localStorage.getItem('atSaveV2')) || { money: 5, gems: 0, pendingMoney: 0, nests: [], secretFound: false };
+        function save() { localStorage.setItem('atSaveV2', JSON.stringify(stats)); }
+
+        let restockTime = 180;
+        const shopConfig = [
+            { id: 0, price: 5, prod: 2, max: 10, stock: 10, name: "Gato" },
+            { id: 1, price: 100, prod: 60, max: 5, stock: 5, name: "Gato Pro" },
+            { id: 2, price: 50000000, prod: 5000000, max: 1, stock: 1, name: "DIVINO" }
+        ];
+
+        // --- 3D ENGINE ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), new THREE.MeshStandardMaterial({ color: 0x388E3C }));
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        const player = new THREE.Mesh(new THREE.CapsuleGeometry(0.5, 1), new THREE.MeshStandardMaterial({color: 0x2196F3}));
+        player.position.set(0, 1.1, 0);
+        scene.add(player);
+
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.4), new THREE.MeshStandardMaterial({color: 0x4E342E}));
+        base.position.set(20, 0.2, -20);
+        scene.add(base);
+
+        const secretKitty = new THREE.Mesh(new THREE.SphereGeometry(0.8), new THREE.MeshStandardMaterial({color: 0xFFD700, emissive: 0xFFD700, emissiveIntensity: 2}));
+        secretKitty.position.set(stats.secretFound ? 20 : -150, 1.2, stats.secretFound ? -15 : -150);
+        scene.add(secretKitty);
+
+        stats.nests.forEach(() => {
+            const k = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.8,0.8), new THREE.MeshStandardMaterial({color: Math.random()*0xffffff}));
+            k.position.set(20 + (Math.random()*6-3), 1, -20 + (Math.random()*6-3));
+            scene.add(k);
+        });
+
+        // --- ADMIN ACTIONS ---
+        window.toggleAdmin = () => {
+            const panel = document.getElementById('admin-panel');
+            panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+        };
+
+        window.sendAdminMsg = () => {
+            const input = document.getElementById('admin-input');
+            if(input.value.trim() !== "") {
+                const bar = document.getElementById('admin-msg-bar');
+                bar.style.display = "block";
+                document.getElementById('msg-text').innerText = "⚠️ CREADOR: " + input.value.toUpperCase();
+                playAlertSound(); // Sonido al enviar
+                input.value = "";
+                setTimeout(() => toggleAdmin(), 300);
+            }
+        };
+
+        window.giveInfiniteMoney = () => {
+            stats.money = 999999999999; updateUI(); save();
+            playAlertSound();
+            alert("DINERO INFINITO ACTIVADO");
+        };
+
+        // --- CONTROLS ---
+        const keys = {};
+        let moveDir = { x: 0, z: 0 };
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if(e.key.toLowerCase() === 'k') toggleAdmin();
+        });
+        window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+        const jWrapper = document.getElementById('joystick-wrapper');
+        const jStick = document.getElementById('joystick-stick');
+        const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+        window.initGame = () => {
+            audioCtx.resume(); // Activar audio por interacción
+            document.getElementById('start-prompt').style.display = 'none';
+            if(isTouch) jWrapper.style.display = 'block';
+        };
+
+        jWrapper.addEventListener('touchstart', (e) => handleJoy(e));
+        jWrapper.addEventListener('touchmove', (e) => handleJoy(e));
+        jWrapper.addEventListener('touchend', () => { moveDir = { x: 0, z: 0 }; jStick.style.transform = `translate(0,0)`; });
+        function handleJoy(e) {
+            e.preventDefault();
+            const rect = jWrapper.getBoundingClientRect();
+            const dx = e.touches[0].clientX - (rect.left + rect.width/2);
+            const dy = e.touches[0].clientY - (rect.top + rect.height/2);
+            const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40);
+            const angle = Math.atan2(dy, dx);
+            moveDir.x = Math.cos(angle) * (dist/40);
+            moveDir.z = Math.sin(angle) * (dist/40);
+            jStick.style.transform = `translate(${Math.cos(angle)*dist}px, ${Math.sin(angle)*dist}px)`;
+        }
+
+        // --- SHOP & LOOP ---
+        window.renderShop = () => {
+            const list = document.getElementById('shop-items-list');
+            list.innerHTML = '';
+            shopConfig.forEach(item => {
+                const isOut = item.stock <= 0;
+                list.innerHTML += `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; background:rgba(255,255,255,0.1); padding:10px; border-radius:10px;">
+                    <span><b>${item.name}</b><br><small>$${item.price.toLocaleString()}</small></span>
+                    <button class="btn btn-buy ${isOut?'out-of-stock':''}" onclick="buyEgg(${item.id})" ${isOut?'disabled':''}>${isOut?'AGOTADO':'COMPRAR'}</button>
+                </div>`;
+            });
+        };
+
+        window.buyEgg = (id) => {
+            const item = shopConfig.find(i => i.id === id);
+            if(stats.money >= item.price && item.stock > 0) {
+                stats.money -= item.price; item.stock--;
+                stats.nests.push({prod: item.prod});
+                const k = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.8,0.8), new THREE.MeshStandardMaterial({color: Math.random()*0xffffff}));
+                k.position.set(20 + (Math.random()*6-3), 1, -20 + (Math.random()*6-3));
+                scene.add(k);
+                updateUI(); renderShop(); save();
+            }
+        };
+
+        window.forceRestock = (isAdmin) => {
+            if(isAdmin || stats.gems >= 100) {
+                if(!isAdmin) stats.gems -= 100;
+                shopConfig.forEach(i => i.stock = i.max);
+                restockTime = 180; updateUI(); renderShop(); save();
+                if(isAdmin) playAlertSound();
+            }
+        };
+
+        setInterval(() => {
+            let p = stats.nests.reduce((a,b) => a + b.prod, 0);
+            if(stats.secretFound) p += 1000000;
+            if(p > 0) { stats.pendingMoney += p; updateUI(); }
+            restockTime--;
+            if(restockTime <= 0) { shopConfig.forEach(i => i.stock = i.max); restockTime = 180; renderShop(); }
+            const timer = document.getElementById('restock-timer');
+            if(timer) {
+                const m = Math.floor(restockTime/60); const s = restockTime%60;
+                timer.innerText = `Restock: ${m}:${s<10?'0'+s:s}`;
+            }
+            save();
+        }, 1000);
+
+        setInterval(() => {
+            const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.4), new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff }));
+            gem.position.set((Math.random()-0.5)*120, 0.6, (Math.random()-0.5)*120);
+            scene.add(gem);
+        }, 5000);
+
+        function updateUI() {
+            document.getElementById('val-money').innerText = Math.floor(stats.money).toLocaleString();
+            document.getElementById('val-pending').innerText = Math.floor(stats.pendingMoney).toLocaleString();
+            document.getElementById('val-gems').innerText = stats.gems;
+        }
+
+        window.claimMoney = () => { stats.money += stats.pendingMoney; stats.pendingMoney = 0; updateUI(); save(); };
+        window.closeShop = () => document.getElementById('shop-menu').style.display = 'none';
+
+        function animate() {
+            requestAnimationFrame(animate);
+            let nx = player.position.x, nz = player.position.z;
+            const spd = 0.5;
+            if(keys['w']) nz -= spd; if(keys['s']) nz += spd;
+            if(keys['a']) nx -= spd; if(keys['d']) nx += spd;
+            nx += moveDir.x * spd; nz += moveDir.z * spd;
+            player.position.x = nx; player.position.z = nz;
+
+            if(!stats.secretFound && player.position.distanceTo(secretKitty.position) < 3) {
+                stats.secretFound = true; secretKitty.position.set(20, 1.2, -15);
+                stats.gems += 1000; updateUI(); save(); playAlertSound();
+            }
+
+            if(player.position.distanceTo(new THREE.Vector3(-10,0,-10)) < 6 && document.getElementById('shop-menu').style.display !== 'block') {
+                document.getElementById('shop-menu').style.display = 'block'; renderShop();
+            }
+
+            camera.position.set(player.position.x, player.position.y + 20, player.position.z + 20);
+            camera.lookAt(player.position);
+            renderer.render(scene, camera);
+        }
+        updateUI(); animate();
+    </script>
+</body>
+</html>
